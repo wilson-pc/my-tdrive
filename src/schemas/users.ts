@@ -1,12 +1,13 @@
 import { createId } from '@paralleldrive/cuid2'
-import { sql } from 'drizzle-orm'
+import { relations, sql } from 'drizzle-orm'
 import { integer, sqliteTable, text } from 'drizzle-orm/sqlite-core'
+import { files } from './files'
 
 export const users = sqliteTable('users', {
   id: text('id')
     .primaryKey()
     .$defaultFn(() => createId()),
-  externalId: integer('externalId'),
+  externalId: integer('externalId').unique(),
   createdAt: integer('createdAt', { mode: 'timestamp_ms' })
     .default(sql`CURRENT_TIMESTAMP`)
     .notNull(),
@@ -14,3 +15,9 @@ export const users = sqliteTable('users', {
     .default(sql`CURRENT_TIMESTAMP`)
     .notNull()
 })
+
+export const userRelations = relations(users, ({ many }) => ({
+    files: many(files)
+  }))
+
+export type User = typeof users.$inferSelect

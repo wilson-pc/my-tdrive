@@ -1,61 +1,155 @@
 import {
   Button,
+  Image,
+  Input,
   Modal,
   Progress,
+  Select,
   Space,
   Table,
-  Tag,
   type TableProps
 } from 'antd'
 import { useEffect, useState } from 'react'
 import { db } from '../../db'
-import { sql } from 'drizzle-orm'
 import { tg } from '../../book/telegram'
-import {  formatBytes, getAudioCoverAsBlob } from '../../utils'
+import {
+  formatBytes,
+  getAudioCoverAsBlob,
+  getVideoMetadataFromFile,
+  isNumber
+} from '../../utils'
+import { files, type Files as Flv } from '../../schemas/files'
+import { useAuth } from '../../providers/AuthProvider'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { and,  desc, eq, isNull } from 'drizzle-orm'
+import { getThumbnail, saveThumbnail } from '../../utils/indexDb'
+import { useDownload } from '../../useDownload'
+import { Long, Message } from '@mtcute/web'
+import Checkbox from 'antd/es/checkbox/Checkbox'
+import { FolderOpenOutlined } from '@ant-design/icons'
+import { Link,  useSearchParams } from 'react-router'
 
-declare global {
-  interface Window {
-    jsmediatags: any;
-  }
+type Files = Flv & { thumb: string }
+
+navigator.serviceWorker.addEventListener('message', async (e) => {
+  if (e.data.type !== 'REQUEST_STREAM') return
+
+  const { file, params } = e.data
+  const stream = tg.downloadAsStream(file, params)
+
+  // Devolvemos el stream por el MessagePort
+  e.ports[0].postMessage({ stream }, [stream])
+})
+
+function uint8ArrayToBase64(
+  data: Uint8Array,
+  mimeType = 'image/jpeg'
+): Promise<string> {
+  const blob = new Blob([data], { type: mimeType })
+
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+
+    reader.onloadend = () => {
+      resolve(reader.result as string) // Esto será algo como: "data:image/jpeg;base64,..."
+    }
+
+    reader.onerror = (err) => {
+      reject(err)
+    }
+
+    reader.readAsDataURL(blob)
+  })
 }
-const jsmediatags = window.jsmediatags;
-function downloadUint8Array(data: Uint8Array, filename: string) {
-  // Crear un Blob con los datos
-  const blob = new Blob([data], { type: 'image/jpeg' })
-
-  // Crear un enlace de descarga
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = filename
-
-  // Disparar el evento de click para iniciar la descarga
-  document.body.appendChild(a)
-  a.click()
-
-  // Limpiar
-  setTimeout(() => {
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
-  }, 100)
-}
-
 export default function Index() {
+  const { user } = useAuth()
+    const [searchParams] = useSearchParams();
+  const { startDownload, startUpload } = useDownload()
+  const [isModalOpen, setIsModalOpen] = useState(false)
+  const [newFolderName, setNewFolderName] = useState('')
+  const [newGroup, setNewGroup] = useState(false)
+  const [selectedGroup, setSelectedGroup] = useState<number | string | null>(
+    null
+  )
+  const [selectGroup, setSelectGroup] = useState<boolean>(false)
+  const [groups, setGroups] = useState<any>([])
+
+  const folderId = searchParams.get('folderId')
+  const folderQuery = useQuery({
+    queryKey: ['folder', folderId],
+    queryFn: async () => {
+      if (user) {
+        if (folderId) {
+          const rs = await db.query.files.findFirst({
+            where: eq(files.id, folderId)
+          })
+          return rs??null
+        } else {
+          return null
+        }
+      } else {
+        return null
+      }
+    },
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchInterval: false
+  })
+  
+  const query = useQuery({
+    queryKey: ['files', user?.id ?? 0, folderId],
+    queryFn: async () => {
+      console.log(folderId)
+      const normalizedFolderId = folderId === undefined || folderId === '' ? null : folderId;
+      console.log(normalizedFolderId)
+      if (user) {
+        const rs = await db.query.files.findMany({
+          where: and(
+            eq(files.userId, user?.id ?? 0),
+            normalizedFolderId===null
+              ? isNull(files.parentId)
+              : eq(files.parentId, folderId ?? '')
+          ),
+          orderBy: [desc(files.name)]
+        })
+        return rs.sort((a, b) => {
+          // Si a es folder y b no, a va antes
+          if (a.isFolder && !b.isFolder) return -1
+          // Si b es folder y a no, b va antes
+          if (!a.isFolder && b.isFolder) return 1
+          // Si ambos son iguales respecto a isFolder, no cambia orden
+          return 0
+        })
+      } else {
+        return []
+      }
+    },
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    refetchInterval: false
+  })
   const [upload, setUpload] = useState<{
     size: string
     uploaded: string
     percentage: number
   } | null>(null)
-
-  interface DataType {
-    key: string
-    name: string
-    age: number
-    address: string
-    tags: string[]
-  }
-
-  const columns: TableProps<DataType>['columns'] = [
+  const queryClient = useQueryClient()
+  const columns: TableProps<Files>['columns'] = [
+    {
+      title: '',
+      dataIndex: 'messageId',
+      key: 'messageId',
+      render: (messageId, record) => {
+        if (record.isFolder) {
+          return <FolderOpenOutlined style={{ fontSize: 40 }} />
+        }
+        if (record.thumb) {
+          return <Image src={record.thumb} height={40} preview={false} />
+        } else {
+          return ''
+        }
+      }
+    },
     {
       title: 'Name',
       dataIndex: 'name',
@@ -63,71 +157,47 @@ export default function Index() {
       render: (text) => <a>{text}</a>
     },
     {
-      title: 'Age',
-      dataIndex: 'age',
-      key: 'age'
+      title: 'Tipo',
+      dataIndex: 'mimeType',
+      key: 'mimeType'
     },
     {
-      title: 'Address',
-      dataIndex: 'address',
-      key: 'address'
+      title: 'Tamaño',
+      dataIndex: 'size',
+      key: 'size'
     },
     {
-      title: 'Tags',
-      key: 'tags',
-      dataIndex: 'tags',
-      render: (_, { tags }) => (
-        <>
-          {tags.map((tag) => {
-            let color = tag.length > 5 ? 'geekblue' : 'green'
-            if (tag === 'loser') {
-              color = 'volcano'
-            }
-            return (
-              <Tag color={color} key={tag}>
-                {tag.toUpperCase()}
-              </Tag>
-            )
-          })}
-        </>
-      )
+      title: 'Duration',
+      dataIndex: 'duration',
+      key: 'duration'
     },
     {
       title: 'Action',
       key: 'action',
       render: (_, record) => (
         <Space size='middle'>
-          <a>Invite {record.name}</a>
-          <a>Delete</a>
+          {record.isFolder ? (
+            <>
+              <Link to={`?folderId=${record.id}`}> <Button type='primary'>ver</Button></Link>
+            </>
+          ) : (
+            <>
+              <Button
+                type='primary'
+                onClick={() => getMessage(record.messageId)}
+              >
+                Descargar
+              </Button>
+              <Button type='link' onClick={() => deleteFile(record)}>
+                Borrar
+              </Button>
+            </>
+          )}
         </Space>
       )
     }
   ]
-
-  const data: DataType[] = [
-    {
-      key: '1',
-      name: 'John Brown',
-      age: 32,
-      address: 'New York No. 1 Lake Park',
-      tags: ['nice', 'developer']
-    },
-    {
-      key: '2',
-      name: 'Jim Green',
-      age: 42,
-      address: 'London No. 1 Lake Park',
-      tags: ['loser']
-    },
-    {
-      key: '3',
-      name: 'Joe Black',
-      age: 32,
-      address: 'Sydney No. 1 Lake Park',
-      tags: ['cool', 'teacher']
-    }
-  ]
-
+  /*
   useEffect(() => {
     async function init() {
       const result = await db.query.users.findMany()
@@ -147,58 +217,298 @@ export default function Index() {
     }
     init()
   }, [])
+*/
+  useEffect(() => {
+    if (query.data) {
+      async function getThumb(fles: Flv[]) {
+        const fils: Record<string, any> = {}
+
+              const chatId= folderQuery.data?.chatId??'me'
+    const peerId= isNumber(chatId)?Number(chatId):chatId
+
+      const message = await tg.getMessages(peerId, fles.filter(f=>f.isFolder===false).map(f=>Number(f.messageId)))
+      const messagesRecord: Record<number,(Message | null)>={}
+      for (const m of message) {
+        if(m){
+          messagesRecord[m.id]=m
+        }
+      }
+        for (const file of fles) {
+          if (file.isFolder===false) {
+            const cached = await getThumbnail(`${file.messageId}`)
+            const message:any = messagesRecord[Number(file.messageId)]
+
+            if (!cached) {
+            
+   
+              //console.log(message[0].media.thumbnails[1].location)
+              const buff: any = await tg.call({
+                _: 'upload.getFile',
+                location: message.media.thumbnails[1].location,
+                offset: 0,
+                limit: 32768
+              })
+              console.log(buff)
+              //  const thumb= await tg.downloadAsBuffer("AAMCAQADGQEAAQr8D2hYRuCbTGUauAOmWC51wbmWTGRhAAIiCAAC-zHBRrtM63rZ8OINAQAHbQADNgQ")
+              const base64 = await uint8ArrayToBase64(buff.bytes)
+
+              await saveThumbnail(`${file.messageId}`, buff.bytes)
+              fils[file.messageId ?? ''] = base64
+            } else {
+              const base64 = await uint8ArrayToBase64(cached)  
+              fils[file.messageId ?? ''] = base64
+            }
+          }
+        }
+
+        queryClient.setQueryData(
+          ['files', user?.id ?? 0, folderId],
+          (oldData: Files[]) => {
+            if (!oldData) return []
+
+            return oldData.map((item) => {
+              if (item.isFolder===false) {
+                return { ...item, thumb: fils[item.messageId ?? ''] }
+              }
+              return item
+            })
+          }
+        )
+      }
+      void getThumb(query.data)
+    }
+  }, [query.data])
+
+  const playVideo = () => {}
 
   const onChange = async (e: any) => {
     const file: File = e.target.files[0]
     if (file) {
-      console.log(file)
+  
+      const chatId= folderQuery.data?.chatId??'me'
+    const peerId= isNumber(chatId)?Number(chatId):chatId
+    //  const de= await tg.getPeer(peerId)
+  //console.log(de)
+    /*
+  const de= await tg.getPeer(peerId)
+  console.log(de)
+  const peer = await tg.resolvePeer(peerId)
+  console.log(peer)
+*/
+      //return
+      startUpload(file, user?.id ?? 0,peerId,folderId??'')
       /*
-      const media = await tg.uploadFile({
-        file: file,
-        fileSize: file.size,
-        progressCallback: (sent, total) => {
-          console.log(`Sent ${sent} of ${total}`)
+        const options = {
+          maxSizeMB: 1,
+          maxWidthOrHeight: 400,
+          useWebWorker: true
         }
-      })
-      console.log(media)*/
-      const options = {
-        maxSizeMB: 1,
-        maxWidthOrHeight: 400,
-        useWebWorker: true
-      }
 
-    const audio=await getAudioCoverAsBlob(file)
-    console.log(audio) 
-    throw new Error("error")
-//      const tsize = await getImageDimensionsFromFile(file)
-  //    const izise = await getImageDimensionsFromFile(file)
+        const audio = await getAudioCoverAsBlob(file)
+        console.log(audio)
+        //  throw new Error("error")
+        //      const tsize = await getImageDimensionsFromFile(file)
+        //    const izise = await getImageDimensionsFromFile(file)
 
-      const thumbv = await tg.uploadFile({ file: audio as any,fileMime:"image/jpeg" })
+        let thumbv = undefined
 
-    
-      const fee = await tg.sendMedia(
-        'me',
-        {
-          file: file,
-          type: 'audio',
-          fileMime: file.type,
-          thumb: thumbv
-        },
-        {
-          progressCallback: (sent, total) => {
-            setUpload({
-              size: formatBytes(file.size),
-              uploaded: formatBytes(sent),
-              percentage: Math.round((sent / total) * 100)
-            })
+        if (audio?.thumb) {
+          thumbv = await tg.uploadFile({
+            file: audio?.thumb as any,
+            fileMime: 'image/jpeg'
+          })
+        }
+
+        const fee = await tg.sendMedia(
+          'me',
+          {
+            file: file,
+            type: 'audio',
+            fileMime: file.type,
+            thumb: thumbv,
+            duration: audio?.duration
+          },
+          {
+            progressCallback: (sent, total) => {
+              setUpload({
+                size: formatBytes(file.size),
+                uploaded: formatBytes(sent),
+                percentage: Math.round((sent / total) * 100)
+              })
+            }
           }
-        }
-      )
-      setUpload(null)
-      console.log(fee)
-      console.log(fee.media?.id)
+        )
+        setUpload(null)
+        console.log(fee)
+        console.log(fee.media?.id)
+      */
     }
   }
+
+  const videoUpload = async (file: File) => {
+    const video = await getVideoMetadataFromFile(file)
+    console.log(video)
+    //  throw new Error("error")
+    //      const tsize = await getImageDimensionsFromFile(file)
+    //    const izise = await getImageDimensionsFromFile(file)
+
+    let thumbv = undefined
+
+    if (video?.thumbnail) {
+      thumbv = await tg.uploadFile({
+        file: video.thumbnail as any,
+        fileMime: 'image/jpeg'
+      })
+    }
+
+    const fee = await tg.sendMedia(
+      'me',
+      {
+        file: file,
+        type: 'video',
+        fileMime: file.type,
+        thumb: thumbv,
+        duration: video?.duration
+      },
+      {
+        progressCallback: (sent, total) => {
+          setUpload({
+            size: formatBytes(file.size),
+            uploaded: formatBytes(sent),
+            percentage: Math.round((sent / total) * 100)
+          })
+        }
+      }
+    )
+
+    await db.insert(files).values({
+      name: file.name,
+      isFolder: false,
+      parentId: null,
+      mimeType: file.type,
+      size: file.size,
+      duration: video?.duration,
+      userId: user?.id,
+      chatId: 'me',
+      fileId: fee.media?.fileId,
+      messageId: fee.id
+    })
+  }
+  const audioUpload = async (file: File) => {
+    const audio = await getAudioCoverAsBlob(file)
+
+    let thumbv = undefined
+
+    if (audio?.thumb) {
+      thumbv = await tg.uploadFile({
+        file: audio?.thumb as any,
+        fileMime: 'image/jpeg'
+      })
+    }
+
+    const fee = await tg.sendMedia(
+      'me',
+      {
+        file: file,
+        type: 'audio',
+        fileMime: file.type,
+        thumb: thumbv,
+        duration: audio?.duration
+      },
+      {
+        progressCallback: (sent, total) => {
+          setUpload({
+            size: formatBytes(file.size),
+            uploaded: formatBytes(sent),
+            percentage: Math.round((sent / total) * 100)
+          })
+        }
+      }
+    )
+    setUpload(null)
+    console.log(fee)
+    console.log(fee.media?.id)
+  }
+
+  const getMessage = async (messageId: string | null) => {
+    console.log(messageId)
+          const chatId= folderQuery.data?.chatId??'me'
+    const peerId= isNumber(chatId)?Number(chatId):chatId
+    const message: any = await tg.getMessages(peerId, [Number(messageId)])
+    const file = message[0].media
+
+    startDownload(file, file.fileName)
+  }
+
+  const deleteFile = async (file: Files) => {
+    await db.delete(files).where(eq(files.id, file.id))
+    await tg.deleteMessagesById(file.chatId as string, [Number(file.messageId)])
+    query.refetch()
+  }
+
+  const getGroups = async () => {
+    const rs: any = await tg.call({
+      _: 'messages.getDialogs',
+      offsetDate: 0,
+      offsetId: 0,
+      offsetPeer: { _: 'inputPeerEmpty' },
+      limit: 100,
+      hash: Long.ZERO
+    })
+
+    const groups: any[] = []
+    for (const element of rs.chats) {
+      console.log(element._)
+      if (element._ !== 'channel') {
+        // console.log(element.id,element.title,element.username,element.usernames)
+        groups.push({
+          value: element.id,
+          label: element.title
+        })
+      }
+    }
+    setGroups(groups)
+  }
+
+  const createFolder = async () => {
+    if (!newFolderName.trim()) {
+      return false
+    }
+    let chatId: string | number = 'me'
+
+    if (newGroup) {
+      const newTgroup = await tg.createGroup({
+        title: newFolderName,
+        users: [Number(user?.id)]
+      })
+      chatId = -newTgroup.chat.id
+    }
+
+    if (selectedGroup) {
+      chatId = selectedGroup
+    }
+
+    await db.insert(files).values({
+      name: newFolderName,
+      isFolder: true,
+      mimeType: null,
+      size: 0,
+      duration: 0,
+      userId: user?.id,
+      chatId: `${chatId}`,
+      fileId: null,
+      messageId: null
+    })
+    query.refetch()
+    setIsModalOpen(false)
+    setNewFolderName('')
+    setNewGroup(false)
+    setSelectedGroup(null)
+  }
+  const openCreateFolder = () => {
+    setIsModalOpen(true)
+  }
+
   return (
     <div className='p-2'>
       <input
@@ -214,6 +524,62 @@ export default function Index() {
           width: '100%'
         }}
       >
+        <Modal
+          title='Crear carpeta'
+          closable={{ 'aria-label': 'Custom Close Button' }}
+          open={isModalOpen}
+          onOk={createFolder}
+          onCancel={() => setIsModalOpen(false)}
+        >
+          <div>
+            <Input
+              placeholder='Nombre de la carpeta'
+              onChange={(e) => setNewFolderName(e.target.value)}
+            />
+            <Checkbox
+              value={newGroup}
+              onChange={() => {
+                setNewGroup(!newGroup)
+              }}
+            >
+              Crear en telegram como un grupo
+            </Checkbox>
+            <br />
+            <Checkbox
+              value={selectGroup}
+              onChange={async () => {
+                if (groups.length === 0) {
+                  void getGroups()
+                }
+                setSelectGroup(!selectGroup)
+              }}
+            >
+              Vincular a un grupo existente
+            </Checkbox>
+            <br />
+            <br />
+            {selectGroup && (
+              <>
+                <Select
+                  style={{ width: '100%' }}
+                  showSearch
+                  placeholder='Buscar'
+                  optionFilterProp='label'
+                  filterSort={(optionA: any, optionB: any) =>
+                    (optionA?.label ?? '')
+                      .toLowerCase()
+                      .localeCompare((optionB?.label ?? '').toLowerCase())
+                  }
+                  onChange={(val) => {
+                    console.log(val)
+                    setSelectedGroup(val)
+                  }}
+                  options={groups}
+                />
+              </>
+            )}
+          </div>
+        </Modal>
         <div style={{ float: 'right' }}>
           <Button
             type='primary'
@@ -226,9 +592,20 @@ export default function Index() {
             subir archivo
           </Button>
         </div>
+        <div style={{ float: 'left' }}>
+          <Button
+            type='primary'
+            onClick={() => {
+              openCreateFolder()
+            }}
+            style={{ marginBottom: 16 }}
+          >
+            Crear Carpeta
+          </Button>
+        </div>
       </div>
-      <Table<DataType> columns={columns} dataSource={data} />
-      <Modal closable={false} open={upload!==null} footer={null} centered>
+      <Table<Files> columns={columns} dataSource={query.data ?? []} />
+      <Modal closable={false} open={upload !== null} footer={null} centered>
         <div style={{ textAlign: 'center' }}>
           <div>
             <h3>Subiendo archivo</h3>
@@ -241,7 +618,9 @@ export default function Index() {
             />
           </div>
           <div>
-           <h5>{upload?.uploaded}/{upload?.size}</h5>
+            <h5>
+              {upload?.uploaded}/{upload?.size}
+            </h5>
           </div>
         </div>
       </Modal>

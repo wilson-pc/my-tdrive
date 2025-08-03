@@ -4,8 +4,10 @@ import { RouterProvider } from 'react-router'
 import { router } from './router'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { ConfigProvider } from 'antd'
-import '@ant-design/v5-patch-for-react-19';
+import '@ant-design/v5-patch-for-react-19'
 import AuthProvider from './providers/AuthProvider'
+import { DownloadManagerProvider } from './conexts/downloadConext'
+import { DownloadFloatingPanel } from './FloatingPanel'
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -14,7 +16,9 @@ const queryClient = new QueryClient({
     }
   }
 })
-
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js')
+}
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
@@ -29,7 +33,10 @@ createRoot(document.getElementById('root')!).render(
         }}
       >
         <AuthProvider>
-          <RouterProvider router={router} />
+          <DownloadManagerProvider>
+            <RouterProvider router={router} />
+            <DownloadFloatingPanel  />
+          </DownloadManagerProvider>
         </AuthProvider>
       </ConfigProvider>
     </QueryClientProvider>

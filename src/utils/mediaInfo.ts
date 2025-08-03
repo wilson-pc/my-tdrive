@@ -4,82 +4,108 @@ declare global {
   }
 }
 const jsmediatags = window.jsmediatags
-export function getAudioDurationFromFile(file: File): Promise<number> {
+export function getAudioDurationFromFile(file: File): Promise<number|undefined> {
   return new Promise((resolve, reject) => {
-    const audio = document.createElement('audio');
-    audio.preload = 'metadata';
-    audio.src = URL.createObjectURL(file);
+    const audio = document.createElement('audio')
+    audio.preload = 'metadata'
+    audio.src = URL.createObjectURL(file)
 
     audio.onloadedmetadata = () => {
-      URL.revokeObjectURL(audio.src);
-      resolve(audio.duration); // duración en segundos (puede incluir decimales)
-    };
+      URL.revokeObjectURL(audio.src)
+      resolve(audio.duration) // duración en segundos (puede incluir decimales)
+    }
 
     audio.onerror = () => {
-      reject(new Error('No se pudo cargar el archivo de audio'));
-    };
-  });
+     resolve(undefined) 
+    }
+  })
 }
 
-export function getAudioCoverAsBlob(file: File): Promise<{thumb:Blob | null,duration:number}|null> {
-
-  return new Promise((resolve) => {
+export function getAudioCoverAsBlob(
+  file: File
+): Promise<{ thumb: Blob | null; duration: number|undefined } | null> {
+  // eslint-disable-next-line no-async-promise-executor
+  return new Promise(async (resolve) => {
+    const duration = await getAudioDurationFromFile(file)
+    console.log(duration)
     jsmediatags.read(file, {
-
       onSuccess: async function (tag: any) {
-        const duration= await getAudioDurationFromFile(file);
-
-        const picture = tag.tags.picture;
+        const picture = tag.tags.picture
         if (picture) {
-          const { data, format } = picture;
+          const { data, format } = picture
 
           // Convertimos array-like a Uint8Array
-          const byteArray = new Uint8Array(data.length);
+          const byteArray = new Uint8Array(data.length)
           for (let i = 0; i < data.length; i++) {
-            byteArray[i] = data[i];
+            byteArray[i] = data[i]
           }
 
-          const blob = new Blob([byteArray], { type: format });
+          const blob = new Blob([byteArray], { type: format })
           resolve({
-            thumb:blob,
-            duration:duration
-          });
+            thumb: blob,
+            duration: duration
+          })
 
           // Si quieres un File en lugar de Blob:
           // const coverFile = new File([blob], 'cover.jpg', { type: format });
           // resolve(coverFile);
         } else {
-          resolve(null);
+          resolve({
+            thumb: null,
+            duration: duration
+          })
         }
       },
       onError: function () {
-        resolve(null);
+        resolve({
+          thumb: null,
+          duration: duration
+        })
       }
-    });
-  });
+    })
+  })
 }
 
 export function getImageDimensionsFromFile(
   file: File
-): Promise<{ width: number; height: number; thumbnail: Blob | null }> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
+): Promise<{ width: number; height: number; thumbnail: Blob | null }|null> {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
 
     reader.onload = function (e: any) {
-      const img = new Image()
+      const img = new Image();
 
       img.onload = function () {
-        // Canvas para la imagen original (opcional, en este caso no la usamos)
-        const width = img.width
-        const height = img.height
+        const width = img.width;
+        const height = img.height;
 
-        // Canvas para thumbnail 320x240
-        const thumbCanvas = document.createElement('canvas')
-        thumbCanvas.width = 320
-        thumbCanvas.height = 240
+        // Tamaño máximo del thumbnail
+        const maxThumbWidth = 320;
+        const maxThumbHeight = 240;
 
-        const ctx = thumbCanvas.getContext('2d')
-        ctx?.drawImage(img, 0, 0, thumbCanvas.width, thumbCanvas.height)
+        // Calcular proporción manteniendo el aspecto
+        let thumbWidth = maxThumbWidth;
+        let thumbHeight = maxThumbHeight;
+
+        const imgRatio = width / height;
+        const thumbRatio = maxThumbWidth / maxThumbHeight;
+
+        if (imgRatio > thumbRatio) {
+          // Imagen es más ancha que el thumbnail
+          thumbWidth = maxThumbWidth;
+          thumbHeight = maxThumbWidth / imgRatio;
+        } else {
+          // Imagen es más alta o igual en relación al thumbnail
+          thumbHeight = maxThumbHeight;
+          thumbWidth = maxThumbHeight * imgRatio;
+        }
+
+        const thumbCanvas = document.createElement('canvas');
+        thumbCanvas.width = thumbWidth;
+        thumbCanvas.height = thumbHeight;
+
+        const ctx = thumbCanvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0, thumbWidth, thumbHeight);
 
         thumbCanvas.toBlob(
           (thumbBlob) => {
@@ -87,22 +113,27 @@ export function getImageDimensionsFromFile(
               width,
               height,
               thumbnail: thumbBlob
-            })
+            });
           },
           'image/jpeg',
           0.8
-        )
+        );
+      };
+
+      img.onerror = () => {
+        console.log('No se pudo cargar la imagen.')
+       resolve(null)
+      };
+      img.src = e.target.result;
+    };
+
+    reader.onerror = () => {
+        console.log('No se pudo cargar la imagen.')
+       resolve(null)
       }
-
-      img.onerror = () => reject(new Error('No se pudo cargar la imagen.'))
-      img.src = e.target.result
-    }
-
-    reader.onerror = () => reject(new Error('No se pudo leer el archivo.'))
-    reader.readAsDataURL(file)
-  })
+    reader.readAsDataURL(file);
+  });
 }
-
 export function getVideoMetadataFromFile(file: File): Promise<{
   width: number
   height: number
