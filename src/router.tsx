@@ -1,10 +1,10 @@
 import { createBrowserRouter } from "react-router";
 import { AdminLayout } from "./layouts/adminLayout";
 import Index from "./pages/drive";
-import About from "./pages/drive/about";
 import { AuthLayout } from "./layouts/authLayout";
 import LoginPage from "./pages/auth";
 import { PrivatePage } from "./PrivatePage";
+import FilePage from "./pages/drive/file";
 
 export const router: ReturnType<typeof createBrowserRouter> =  createBrowserRouter([
   {
@@ -22,7 +22,7 @@ export const router: ReturnType<typeof createBrowserRouter> =  createBrowserRout
       element: <PrivatePage page={<AdminLayout />} />,
       children: [
         { index: true, Component: Index },
-        { path: "about", Component: About },
+        { path: "file/:fileId", Component: FilePage },
       ],
     }
 ]);

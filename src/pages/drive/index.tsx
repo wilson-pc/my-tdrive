@@ -15,19 +15,26 @@ import { tg } from '../../book/telegram'
 import {
   formatBytes,
   getAudioCoverAsBlob,
+  getDuration,
   getVideoMetadataFromFile,
   isNumber
 } from '../../utils'
 import { files, type Files as Flv } from '../../schemas/files'
 import { useAuth } from '../../providers/AuthProvider'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { and,  desc, eq, isNull } from 'drizzle-orm'
+import { and, desc, eq, isNull } from 'drizzle-orm'
 import { getThumbnail, saveThumbnail } from '../../utils/indexDb'
 import { useDownload } from '../../useDownload'
 import { Long, Message } from '@mtcute/web'
 import Checkbox from 'antd/es/checkbox/Checkbox'
-import { FolderOpenOutlined } from '@ant-design/icons'
-import { Link,  useSearchParams } from 'react-router'
+import {
+  AppstoreOutlined,
+  FolderOpenOutlined,
+  SearchOutlined,
+  UnorderedListOutlined
+} from '@ant-design/icons'
+import { Link, useSearchParams } from 'react-router'
+import CardGridWithPagination from '../../components/carts'
 
 type Files = Flv & { thumb: string }
 
@@ -63,7 +70,7 @@ function uint8ArrayToBase64(
 }
 export default function Index() {
   const { user } = useAuth()
-    const [searchParams] = useSearchParams();
+  const [searchParams] = useSearchParams()
   const { startDownload, startUpload } = useDownload()
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [newFolderName, setNewFolderName] = useState('')
@@ -71,6 +78,7 @@ export default function Index() {
   const [selectedGroup, setSelectedGroup] = useState<number | string | null>(
     null
   )
+  const [isGridView, setIsGridView] = useState(false)
   const [selectGroup, setSelectGroup] = useState<boolean>(false)
   const [groups, setGroups] = useState<any>([])
 
@@ -83,7 +91,7 @@ export default function Index() {
           const rs = await db.query.files.findFirst({
             where: eq(files.id, folderId)
           })
-          return rs??null
+          return rs ?? null
         } else {
           return null
         }
@@ -95,18 +103,19 @@ export default function Index() {
     refetchOnReconnect: false,
     refetchInterval: false
   })
-  
+
   const query = useQuery({
     queryKey: ['files', user?.id ?? 0, folderId],
     queryFn: async () => {
       console.log(folderId)
-      const normalizedFolderId = folderId === undefined || folderId === '' ? null : folderId;
+      const normalizedFolderId =
+        folderId === undefined || folderId === '' ? null : folderId
       console.log(normalizedFolderId)
       if (user) {
         const rs = await db.query.files.findMany({
           where: and(
             eq(files.userId, user?.id ?? 0),
-            normalizedFolderId===null
+            normalizedFolderId === null
               ? isNull(files.parentId)
               : eq(files.parentId, folderId ?? '')
           ),
@@ -164,12 +173,24 @@ export default function Index() {
     {
       title: 'Tamaño',
       dataIndex: 'size',
-      key: 'size'
+      key: 'size',
+      render: (text,record) => {
+        if (record.mimeType?.includes('audio') || record.mimeType?.includes('video')) {
+          return formatBytes(text)
+        }
+        return ''
+      }
     },
     {
       title: 'Duration',
       dataIndex: 'duration',
-      key: 'duration'
+      key: 'duration',
+      render: (text,record) => {
+        if (record.mimeType?.includes('audio') || record.mimeType?.includes('video')) {
+          return getDuration(text)
+        }
+        return ''
+      }
     },
     {
       title: 'Action',
@@ -178,14 +199,14 @@ export default function Index() {
         <Space size='middle'>
           {record.isFolder ? (
             <>
-              <Link to={`?folderId=${record.id}`}> <Button type='primary'>ver</Button></Link>
+              <Link to={`?folderId=${record.id}`}>
+                {' '}
+                <Button type='primary'>ver</Button>
+              </Link>
             </>
           ) : (
             <>
-              <Button
-                type='primary'
-                onClick={() => getMessage(record.messageId)}
-              >
+              <Button type='primary' onClick={() => getMessage(record)}>
                 Descargar
               </Button>
               <Button type='link' onClick={() => deleteFile(record)}>
@@ -223,24 +244,27 @@ export default function Index() {
       async function getThumb(fles: Flv[]) {
         const fils: Record<string, any> = {}
 
-              const chatId= folderQuery.data?.chatId??'me'
-    const peerId= isNumber(chatId)?Number(chatId):chatId
+        const chatId = folderQuery.data?.chatId ?? 'me'
+        const peerId = isNumber(chatId) ? Number(chatId) : chatId
 
-      const message = await tg.getMessages(peerId, fles.filter(f=>f.isFolder===false).map(f=>Number(f.messageId)))
-      const messagesRecord: Record<number,(Message | null)>={}
-      for (const m of message) {
-        if(m){
-          messagesRecord[m.id]=m
+        const message = await tg.getMessages(
+          peerId,
+          fles
+            .filter((f) => f.isFolder === false)
+            .map((f) => Number(f.messageId))
+        )
+        const messagesRecord: Record<number, Message | null> = {}
+        for (const m of message) {
+          if (m) {
+            messagesRecord[m.id] = m
+          }
         }
-      }
         for (const file of fles) {
-          if (file.isFolder===false) {
+          if (file.isFolder === false) {
             const cached = await getThumbnail(`${file.messageId}`)
-            const message:any = messagesRecord[Number(file.messageId)]
+            const message: any = messagesRecord[Number(file.messageId)]
 
             if (!cached) {
-            
-   
               //console.log(message[0].media.thumbnails[1].location)
               const buff: any = await tg.call({
                 _: 'upload.getFile',
@@ -255,7 +279,7 @@ export default function Index() {
               await saveThumbnail(`${file.messageId}`, buff.bytes)
               fils[file.messageId ?? ''] = base64
             } else {
-              const base64 = await uint8ArrayToBase64(cached)  
+              const base64 = await uint8ArrayToBase64(cached)
               fils[file.messageId ?? ''] = base64
             }
           }
@@ -267,7 +291,7 @@ export default function Index() {
             if (!oldData) return []
 
             return oldData.map((item) => {
-              if (item.isFolder===false) {
+              if (item.isFolder === false) {
                 return { ...item, thumb: fils[item.messageId ?? ''] }
               }
               return item
@@ -284,19 +308,18 @@ export default function Index() {
   const onChange = async (e: any) => {
     const file: File = e.target.files[0]
     if (file) {
-  
-      const chatId= folderQuery.data?.chatId??'me'
-    const peerId= isNumber(chatId)?Number(chatId):chatId
-    //  const de= await tg.getPeer(peerId)
-  //console.log(de)
-    /*
+      const chatId = folderQuery.data?.chatId ?? 'me'
+      const peerId = isNumber(chatId) ? Number(chatId) : chatId
+      //  const de= await tg.getPeer(peerId)
+      //console.log(de)
+      /*
   const de= await tg.getPeer(peerId)
   console.log(de)
   const peer = await tg.resolvePeer(peerId)
   console.log(peer)
 */
       //return
-      startUpload(file, user?.id ?? 0,peerId,folderId??'')
+      startUpload(file, user?.id ?? 0, peerId, folderId ?? '')
       /*
         const options = {
           maxSizeMB: 1,
@@ -430,14 +453,13 @@ export default function Index() {
     console.log(fee.media?.id)
   }
 
-  const getMessage = async (messageId: string | null) => {
-    console.log(messageId)
-          const chatId= folderQuery.data?.chatId??'me'
-    const peerId= isNumber(chatId)?Number(chatId):chatId
-    const message: any = await tg.getMessages(peerId, [Number(messageId)])
-    const file = message[0].media
+  const getMessage = async (file: Files) => {
+    const chatId = folderQuery.data?.chatId ?? 'me'
+    const peerId = isNumber(chatId) ? Number(chatId) : chatId
+    const message: any = await tg.getMessages(peerId, [Number(file.messageId)])
+    const media = message[0].media
 
-    startDownload(file, file.fileName)
+    startDownload(media, file.name)
   }
 
   const deleteFile = async (file: Files) => {
@@ -593,18 +615,46 @@ export default function Index() {
           </Button>
         </div>
         <div style={{ float: 'left' }}>
-          <Button
-            type='primary'
-            onClick={() => {
-              openCreateFolder()
-            }}
-            style={{ marginBottom: 16 }}
+          <Space
+            direction='horizontal'
+            size='middle'
+            style={{ display: 'flex' }}
           >
-            Crear Carpeta
-          </Button>
+            <Button
+              type='primary'
+              onClick={() => {
+                openCreateFolder()
+              }}
+            >
+              Crear Carpeta
+            </Button>
+            {isGridView && (
+              <Button
+                onClick={() => setIsGridView(false)}
+                icon={<UnorderedListOutlined />}
+              >
+                Lista
+              </Button>
+            )}
+            {!isGridView && (
+              <Button
+                onClick={() => setIsGridView(true)}
+                icon={<AppstoreOutlined />}
+              ></Button>
+            )}
+          </Space>
         </div>
       </div>
-      <Table<Files> columns={columns} dataSource={query.data ?? []} />
+      {isGridView ? (
+        <CardGridWithPagination
+          items={query.data ?? []}
+          pageSize={8}
+          onDownload={getMessage}
+          onDelete={deleteFile}
+        />
+      ) : (
+        <Table<Files> columns={columns} dataSource={query.data ?? []} />
+      )}
       <Modal closable={false} open={upload !== null} footer={null} centered>
         <div style={{ textAlign: 'center' }}>
           <div>

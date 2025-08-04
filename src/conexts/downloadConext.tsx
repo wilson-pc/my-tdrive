@@ -20,7 +20,12 @@ export type DownloadItem = {
 type DownloadManagerContextType = {
   downloads: DownloadItem[]
   startDownload: (url: string, name: string) => void
-  startUpload: (file: File, userId: number,chatId: string|number,folderId:string) => void
+  startUpload: (
+    file: File,
+    userId: number,
+    chatId: string | number,
+    folderId: string
+  ) => void
   rmItem: (id: string) => void
 }
 
@@ -92,18 +97,29 @@ export const DownloadManagerProvider: React.FC<{
     }, 100)
   }
 
-  const startUpload = async (file: File, userId: number, chatId: string,folderId:string) => {
+  const startUpload = async (
+    file: File,
+    userId: number,
+    chatId: string | number,
+    folder: string
+  ) => {
+    const folderId = folder===""?null:folder
     if (file.type.includes('audio')) {
-      await audioUpload(file, userId,chatId,folderId)
+      await audioUpload(file, userId, chatId, folderId)
     } else if (file.type.includes('video')) {
-      await videoUpload(file, userId,chatId,folderId)
+      await videoUpload(file, userId, chatId, folderId)
     } else if (file.type.includes('image')) {
-      await imageUpload(file, userId,chatId,folderId)
+      await imageUpload(file, userId, chatId, folderId)
     }
     queryClient.refetchQueries({ queryKey: ['files', userId ?? 0, folderId] })
   }
 
-  const imageUpload = async (file: File, userId: number, chatId: string,folderId:string) => {
+  const imageUpload = async (
+    file: File,
+    userId: number | number,
+    chatId: string | number,
+    folderId: string|null
+  ) => {
     const id = `${Date.now()}-${file.name}`
     setDownloads((prev) => [
       ...prev,
@@ -164,7 +180,12 @@ export const DownloadManagerProvider: React.FC<{
     )
   }
 
-  const videoUpload = async (file: File, userId: number, chatId: string,folderId:string) => {
+  const videoUpload = async (
+    file: File,
+    userId: number,
+    chatId: string | number,
+    folderId: string|null
+  ) => {
     const id = `${Date.now()}-${file.name}`
     setDownloads((prev) => [
       ...prev,
@@ -231,7 +252,12 @@ export const DownloadManagerProvider: React.FC<{
       )
     )
   }
-  const audioUpload = async (file: File, userId: number, chatId: string,folderId:string) => {
+  const audioUpload = async (
+    file: File,
+    userId: number,
+    chatId: string | number,
+    folderId: string|null
+  ) => {
     const id = `${Date.now()}-${file.name}`
     setDownloads((prev) => [
       ...prev,

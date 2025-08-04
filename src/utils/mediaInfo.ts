@@ -1,10 +1,15 @@
+import dayjs from 'dayjs'
+import duration from 'dayjs/plugin/duration'
+dayjs.extend(duration)
 declare global {
   interface Window {
     jsmediatags: any
   }
 }
 const jsmediatags = window.jsmediatags
-export function getAudioDurationFromFile(file: File): Promise<number|undefined> {
+export function getAudioDurationFromFile(
+  file: File
+): Promise<number | undefined> {
   return new Promise((resolve, reject) => {
     const audio = document.createElement('audio')
     audio.preload = 'metadata'
@@ -16,14 +21,14 @@ export function getAudioDurationFromFile(file: File): Promise<number|undefined> 
     }
 
     audio.onerror = () => {
-     resolve(undefined) 
+      resolve(undefined)
     }
   })
 }
 
 export function getAudioCoverAsBlob(
   file: File
-): Promise<{ thumb: Blob | null; duration: number|undefined } | null> {
+): Promise<{ thumb: Blob | null; duration: number | undefined } | null> {
   // eslint-disable-next-line no-async-promise-executor
   return new Promise(async (resolve) => {
     const duration = await getAudioDurationFromFile(file)
@@ -68,44 +73,44 @@ export function getAudioCoverAsBlob(
 
 export function getImageDimensionsFromFile(
   file: File
-): Promise<{ width: number; height: number; thumbnail: Blob | null }|null> {
+): Promise<{ width: number; height: number; thumbnail: Blob | null } | null> {
   return new Promise((resolve) => {
-    const reader = new FileReader();
+    const reader = new FileReader()
 
     reader.onload = function (e: any) {
-      const img = new Image();
+      const img = new Image()
 
       img.onload = function () {
-        const width = img.width;
-        const height = img.height;
+        const width = img.width
+        const height = img.height
 
         // Tamaño máximo del thumbnail
-        const maxThumbWidth = 320;
-        const maxThumbHeight = 240;
+        const maxThumbWidth = 320
+        const maxThumbHeight = 240
 
         // Calcular proporción manteniendo el aspecto
-        let thumbWidth = maxThumbWidth;
-        let thumbHeight = maxThumbHeight;
+        let thumbWidth = maxThumbWidth
+        let thumbHeight = maxThumbHeight
 
-        const imgRatio = width / height;
-        const thumbRatio = maxThumbWidth / maxThumbHeight;
+        const imgRatio = width / height
+        const thumbRatio = maxThumbWidth / maxThumbHeight
 
         if (imgRatio > thumbRatio) {
           // Imagen es más ancha que el thumbnail
-          thumbWidth = maxThumbWidth;
-          thumbHeight = maxThumbWidth / imgRatio;
+          thumbWidth = maxThumbWidth
+          thumbHeight = maxThumbWidth / imgRatio
         } else {
           // Imagen es más alta o igual en relación al thumbnail
-          thumbHeight = maxThumbHeight;
-          thumbWidth = maxThumbHeight * imgRatio;
+          thumbHeight = maxThumbHeight
+          thumbWidth = maxThumbHeight * imgRatio
         }
 
-        const thumbCanvas = document.createElement('canvas');
-        thumbCanvas.width = thumbWidth;
-        thumbCanvas.height = thumbHeight;
+        const thumbCanvas = document.createElement('canvas')
+        thumbCanvas.width = thumbWidth
+        thumbCanvas.height = thumbHeight
 
-        const ctx = thumbCanvas.getContext('2d');
-        ctx?.drawImage(img, 0, 0, thumbWidth, thumbHeight);
+        const ctx = thumbCanvas.getContext('2d')
+        ctx?.drawImage(img, 0, 0, thumbWidth, thumbHeight)
 
         thumbCanvas.toBlob(
           (thumbBlob) => {
@@ -113,26 +118,26 @@ export function getImageDimensionsFromFile(
               width,
               height,
               thumbnail: thumbBlob
-            });
+            })
           },
           'image/jpeg',
           0.8
-        );
-      };
+        )
+      }
 
       img.onerror = () => {
         console.log('No se pudo cargar la imagen.')
-       resolve(null)
-      };
-      img.src = e.target.result;
-    };
+        resolve(null)
+      }
+      img.src = e.target.result
+    }
 
     reader.onerror = () => {
-        console.log('No se pudo cargar la imagen.')
-       resolve(null)
-      }
-    reader.readAsDataURL(file);
-  });
+      console.log('No se pudo cargar la imagen.')
+      resolve(null)
+    }
+    reader.readAsDataURL(file)
+  })
 }
 export function getVideoMetadataFromFile(file: File): Promise<{
   width: number
@@ -194,4 +199,18 @@ export function getVideoMetadataFromFile(file: File): Promise<{
 
     video.onerror = () => reject(new Error('Error al cargar el video.'))
   })
+}
+
+export function getFileSize(size: number) {
+  const sizes = ['Bytes', 'KB', 'MB', 'GB', 'TB']
+  if (size === 0) return '0 Byte'
+  const i = Math.floor(Math.log(size) / Math.log(1024))
+  return (size / Math.pow(1024, i)).toFixed(2) + ' ' + sizes[i]
+}
+
+export function getDuration(duration: number) {
+  return dayjs
+    .duration(Number(duration), 'seconds')
+    .format('H:mm:ss')
+    .padStart(4, '0:0')
 }
