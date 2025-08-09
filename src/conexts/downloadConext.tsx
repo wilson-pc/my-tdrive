@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState } from 'react'
-import { tg } from '../book/telegram'
+import { tg } from '../boot/telegram'
 import {
   getAudioCoverAsBlob,
   getImageDimensionsFromFile,

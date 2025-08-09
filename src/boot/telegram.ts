@@ -1,8 +1,8 @@
 import { TelegramClient, tl } from "@mtcute/web";
 
 export const tg = new TelegramClient({
-    apiId: 3454052,
-    apiHash: 'cba31f242e6b16063f7db572fe388cb3',
+    apiId: Number(import.meta.env.VITE_TELEGRAM_ID),
+    apiHash: import.meta.env.VITE_TELEGRAM_HASH,
     storage: 'my-account' // will use IndexedDB-based storage
   })
 

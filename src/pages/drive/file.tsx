@@ -8,7 +8,7 @@ import { and, eq } from 'drizzle-orm'
 import { files, type Files as Flv } from '../../schemas'
 import { useEffect } from 'react'
 import { getThumbnail, saveThumbnail } from '../../utils/indexDb'
-import { tg } from '../../book/telegram'
+import { tg } from '../../boot/telegram'
 import { getDuration, getFileSize, isNumber } from '../../utils'
 import { useDownload } from '../../useDownload'
 

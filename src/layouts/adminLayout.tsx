@@ -1,35 +1,40 @@
-import React, { useState } from 'react'
+import  { useState } from 'react'
 import {
   DownOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
-  UploadOutlined,
-  UserOutlined,
-  VideoCameraOutlined
+
 } from '@ant-design/icons'
-import { Button, Dropdown, Layout, Menu, Space, theme } from 'antd'
+import { Button, Dropdown, Layout, Menu, Space, theme, type MenuProps } from 'antd'
 import { useAuth } from '../providers/AuthProvider'
-import { useOutlet } from 'react-router'
+import { useNavigate, useNavigation, useOutlet } from 'react-router'
+import { menuItems } from './MenuItems'
 const { Header, Content, Footer, Sider } = Layout
-type AdminLayoutProps = {
-  children?: React.ReactNode // Hacer children opcional
-}
 
-const items = [
-  UserOutlined,
-  VideoCameraOutlined,
-  UploadOutlined,
-  UserOutlined
-].map((icon, index) => ({
-  key: String(index + 1),
-  icon: React.createElement(icon),
-  label: `nav ${index + 1}`
-}))
-export function AdminLayout({ children }: AdminLayoutProps) {
+
+export function AdminLayout() {
   const [collapsed, setCollapsed] = useState(false)
-  const { user } = useAuth()
+  const { user,handleLogout } = useAuth()
   const outlet = useOutlet()
+  const router = useNavigate()
 
+    const items: MenuProps["items"] = [
+      {
+        key: "3",
+        label: "Logout",
+        onClick: () => {
+         handleLogout()
+        },
+      },
+      {
+        key: "4",
+        label: "Login en el servidor",
+      
+        onClick: () => {
+         router("/server-login")
+        },
+      },
+    ]
 
   const {
     token: { colorBgContainer, borderRadiusLG }
@@ -54,8 +59,9 @@ export function AdminLayout({ children }: AdminLayoutProps) {
         <Menu
           theme='dark'
           mode='inline'
-          defaultSelectedKeys={['4']}
-          items={items}
+            selectedKeys={[location.pathname]}
+          defaultOpenKeys={[`${location.pathname.split('/')[1]}`]}
+             items={menuItems}
         />
       </Sider>
       <Layout>

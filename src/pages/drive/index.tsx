@@ -1,5 +1,7 @@
 import {
   Button,
+  DatePicker,
+  Flex,
   Image,
   Input,
   Modal,
@@ -7,11 +9,13 @@ import {
   Select,
   Space,
   Table,
+  Typography,
+  type DatePickerProps,
   type TableProps
 } from 'antd'
 import { useEffect, useState } from 'react'
 import { db } from '../../db'
-import { tg } from '../../book/telegram'
+import { tg } from '../../boot/telegram'
 import {
   formatBytes,
   getAudioCoverAsBlob,
@@ -30,13 +34,15 @@ import Checkbox from 'antd/es/checkbox/Checkbox'
 import {
   AppstoreOutlined,
   FolderOpenOutlined,
-  SearchOutlined,
   UnorderedListOutlined
 } from '@ant-design/icons'
 import { Link, useSearchParams } from 'react-router'
 import CardGridWithPagination from '../../components/carts'
+import { shares } from '../../schemas'
+import { createId } from '@paralleldrive/cuid2'
 
 type Files = Flv & { thumb: string }
+const { Link: LinkOutlined } = Typography
 
 navigator.serviceWorker.addEventListener('message', async (e) => {
   if (e.data.type !== 'REQUEST_STREAM') return
@@ -78,9 +84,13 @@ export default function Index() {
   const [selectedGroup, setSelectedGroup] = useState<number | string | null>(
     null
   )
+  const [shareModalOpen, setShareModalOpen] = useState(false)
   const [isGridView, setIsGridView] = useState(false)
   const [selectGroup, setSelectGroup] = useState<boolean>(false)
   const [groups, setGroups] = useState<any>([])
+  const [selectedFile, setSelectedFile] = useState<Files | null>(null)
+  const [shareLink, setShareLink] = useState('')
+  const [expirationDate, setExpirationDate] = useState<Date | null>(null)
 
   const folderId = searchParams.get('folderId')
   const folderQuery = useQuery({
@@ -174,8 +184,11 @@ export default function Index() {
       title: 'Tamaño',
       dataIndex: 'size',
       key: 'size',
-      render: (text,record) => {
-        if (record.mimeType?.includes('audio') || record.mimeType?.includes('video')) {
+      render: (text, record) => {
+        if (
+          record.mimeType?.includes('audio') ||
+          record.mimeType?.includes('video')
+        ) {
           return formatBytes(text)
         }
         return ''
@@ -185,8 +198,11 @@ export default function Index() {
       title: 'Duration',
       dataIndex: 'duration',
       key: 'duration',
-      render: (text,record) => {
-        if (record.mimeType?.includes('audio') || record.mimeType?.includes('video')) {
+      render: (text, record) => {
+        if (
+          record.mimeType?.includes('audio') ||
+          record.mimeType?.includes('video')
+        ) {
           return getDuration(text)
         }
         return ''
@@ -211,6 +227,15 @@ export default function Index() {
               </Button>
               <Button type='link' onClick={() => deleteFile(record)}>
                 Borrar
+              </Button>
+              <Button
+                type='link'
+                onClick={() => {
+                  setSelectedFile(record)
+                  setShareModalOpen(true)
+                }}
+              >
+                Compartir
               </Button>
             </>
           )}
@@ -531,6 +556,22 @@ export default function Index() {
     setIsModalOpen(true)
   }
 
+  const onChangeDate: DatePickerProps['onChange'] = (date, dateString) => {
+    console.log(date, dateString)
+    setExpirationDate(date.toDate())
+  }
+  const generateLink = async () => {
+    const id = createId()
+    await db.insert(shares).values({
+      id: id,
+      ownerId: user?.id ?? 0,
+      fileId: selectedFile?.id,
+      expirationDate: expirationDate??null
+    })
+    const currentDomain = window.location.origin
+    const link = `${currentDomain}/share/${id}`
+    setShareLink(link)
+  }
   return (
     <div className='p-2'>
       <input
@@ -546,6 +587,35 @@ export default function Index() {
           width: '100%'
         }}
       >
+        <Modal
+          title='Compartir archivo'
+          centered
+          open={shareModalOpen}
+          onCancel={() => setShareModalOpen(false)}
+          footer={[
+            <Button key='back' onClick={() => setShareModalOpen(false)}>
+              Cerrar
+            </Button>
+          ]}
+        >
+          <div>
+            <DatePicker onChange={onChangeDate} />
+            <br />
+            <br />
+            <div>
+              <Flex gap='small' wrap>
+                {shareLink && (
+                  <LinkOutlined href={shareLink} target='_blank'>
+                    {shareLink}
+                  </LinkOutlined>
+                )}
+                <Button type='primary' onClick={generateLink}>
+                  Generar enlace
+                </Button>
+              </Flex>
+            </div>
+          </div>
+        </Modal>
         <Modal
           title='Crear carpeta'
           closable={{ 'aria-label': 'Custom Close Button' }}

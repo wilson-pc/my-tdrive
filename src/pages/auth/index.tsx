@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { tg } from '../../book/telegram'
+import { tg } from '../../boot/telegram'
 import { useAuth } from '../../providers/AuthProvider'
 import { useNavigate } from 'react-router'
 import {

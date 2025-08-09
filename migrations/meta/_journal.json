@@ -29,6 +29,27 @@
       "when": 1753929455473,
       "tag": "0003_milky_black_queen",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1754502146008,
+      "tag": "0004_futuristic_mulholland_black",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1754508713704,
+      "tag": "0005_parched_marvel_boy",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1754528887091,
+      "tag": "0006_bitter_blue_blade",
+      "breakpoints": true
     }
   ]
 }

@@ -2,6 +2,7 @@ import { createId } from '@paralleldrive/cuid2'
 import { relations, sql } from 'drizzle-orm'
 import { integer, numeric, sqliteTable, text } from 'drizzle-orm/sqlite-core'
 import { users } from './users'
+import { shares } from './shares'
 export const files = sqliteTable('files', {
   id: text('id')
     .primaryKey()
@@ -24,11 +25,12 @@ export const files = sqliteTable('files', {
     .notNull()
 })
 
-export const pointsRelations = relations(files, ({ one }) => ({
+export const pointsRelations = relations(files, ({ one,many }) => ({
   user: one(users, {
     fields: [files.userId],
     references: [users.externalId]
   }),
+  shares: many(shares)
 }))
 
 export type Files = typeof files.$inferSelect

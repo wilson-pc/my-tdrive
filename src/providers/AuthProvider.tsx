@@ -7,7 +7,7 @@ import {
 } from 'react'
 import { Spin } from 'antd'
 import type { User } from '@mtcute/web'
-import { checkSignedIn, tg } from '../book/telegram'
+import { checkSignedIn, tg } from '../boot/telegram'
 
 interface ContextProps {
   user: User | null
@@ -45,8 +45,7 @@ const AuthProvider = ({ children }: Props) => {
       await tg.logOut()
     } catch (error) {
       console.error('Error signing out:', error)
-    } finally {
-    }
+    } 
   }
   const handleLogin = (user: User) => {
     setUser(user)
