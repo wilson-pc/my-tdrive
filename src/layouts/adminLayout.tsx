@@ -14,7 +14,7 @@ import {
   type MenuProps,
 } from "antd";
 import { useAuth } from "../providers/AuthProvider";
-import { useNavigate, useNavigation, useOutlet } from "react-router";
+import { useNavigate, useOutlet } from "react-router";
 import { menuItems } from "./MenuItems";
 const { Header, Content, Footer, Sider } = Layout;
 

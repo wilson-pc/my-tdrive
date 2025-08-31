@@ -10,7 +10,7 @@ const jsmediatags = window.jsmediatags;
 export function getAudioDurationFromFile(
   file: File
 ): Promise<number | undefined> {
-  return new Promise((resolve, reject) => {
+  return new Promise((resolve) => {
     const audio = document.createElement("audio");
     audio.preload = "metadata";
     audio.src = URL.createObjectURL(file);

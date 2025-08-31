@@ -1,7 +1,6 @@
 import {
   Alert,
   Button,
-  Card,
   DatePicker,
   Flex,
   Image,
@@ -10,26 +9,14 @@ import {
   Modal,
   Progress,
   Select,
-  Skeleton,
   Space,
-  Table,
   Typography,
   type DatePickerProps,
-  type TableProps,
 } from "antd";
 import { useEffect, useState } from "react";
 import { db } from "../../db";
 import { tg } from "../../boot/telegram";
-import {
-  convertPdfToImages,
-  formatBytes,
-  getAudioCoverAsBlob,
-  getDuration,
-  getFileSize,
-  getVideoMetadataFromFile,
-  isNumber,
-  readFileData,
-} from "../../utils";
+import { getDuration, getFileSize, isNumber, readFileData } from "../../utils";
 import { files, type Files as Flv } from "../../schemas/files";
 import { useAuth } from "../../providers/AuthProvider";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
@@ -182,119 +169,13 @@ export default function Index() {
     refetchOnReconnect: false,
     refetchInterval: false,
   });
-  const [upload, setUpload] = useState<{
+  const [upload] = useState<{
     size: string;
     uploaded: string;
     percentage: number;
   } | null>(null);
   const queryClient = useQueryClient();
-  const columns: TableProps<Files>["columns"] = [
-    {
-      title: "",
-      dataIndex: "messageId",
-      key: "messageId",
-      render: (messageId, record) => {
-        if (record.isFolder) {
-          return <FolderOpenOutlined style={{ fontSize: 40 }} />;
-        }
-        if (record.thumb) {
-          return <Image src={record.thumb} height={40} preview={false} />;
-        } else {
-          return "";
-        }
-      },
-    },
-    {
-      title: "Name",
-      dataIndex: "name",
-      key: "name",
-      render: (text) => <a>{text}</a>,
-    },
-    {
-      title: "Tipo",
-      dataIndex: "mimeType",
-      key: "mimeType",
-    },
-    {
-      title: "Tamaño",
-      dataIndex: "size",
-      key: "size",
-      render: (text, record) => {
-        if (
-          record.mimeType?.includes("audio") ||
-          record.mimeType?.includes("video")
-        ) {
-          return formatBytes(text);
-        }
-        return "";
-      },
-    },
-    {
-      title: "Duration",
-      dataIndex: "duration",
-      key: "duration",
-      render: (text, record) => {
-        if (
-          record.mimeType?.includes("audio") ||
-          record.mimeType?.includes("video")
-        ) {
-          return getDuration(text);
-        }
-        return "";
-      },
-    },
-    {
-      title: "Action",
-      key: "action",
-      render: (_, record) => (
-        <Space size="middle">
-          {record.isFolder ? (
-            <>
-              <Link to={`?folderId=${record.id}`}>
-                {" "}
-                <Button type="primary">ver</Button>
-              </Link>
-              <Button
-                type="link"
-                onClick={() => {
-                  if (dUser?.serverSession) {
-                    setSelectedFile(record);
-                    setShareModalOpen(true);
-                  } else {
-                    setRequeridLoginServer(true);
-                  }
-                }}
-              >
-                Compartir
-              </Button>
-            </>
-          ) : (
-            <>
-              <Button type="primary" onClick={() => getMessage(record)}>
-                Descargar
-              </Button>
-              <Button type="link" onClick={() => deleteFile(record)}>
-                Borrar
-              </Button>
-              <Button
-                type="link"
-                onClick={() => {
-                  if (dUser?.serverSession) {
-                    setSelectedFile(record);
-                    setShareModalOpen(true);
-                  } else {
-                    setRequeridLoginServer(true);
-                  }
-                }}
-              >
-                Compartir
-              </Button>
-            </>
-          )}
-        </Space>
-      ),
-    },
-  ];
+
   /*
   useEffect(() => {
     async function init() {
@@ -500,91 +381,6 @@ export default function Index() {
         console.log(fee.media?.id)
       */
     }
-  };
-
-  const videoUpload = async (file: File) => {
-    const video = await getVideoMetadataFromFile(file);
-    console.log(video);
-    //  throw new Error("error")
-    //      const tsize = await getImageDimensionsFromFile(file)
-    //    const izise = await getImageDimensionsFromFile(file)
-
-    let thumbv = undefined;
-
-    if (video?.thumbnail) {
-      thumbv = await tg.uploadFile({
-        file: video.thumbnail as any,
-        fileMime: "image/jpeg",
-      });
-    }
-
-    const fee = await tg.sendMedia(
-      "me",
-      {
-        file: file,
-        type: "video",
-        fileMime: file.type,
-        thumb: thumbv,
-        duration: video?.duration,
-      },
-      {
-        progressCallback: (sent, total) => {
-          setUpload({
-            size: formatBytes(file.size),
-            uploaded: formatBytes(sent),
-            percentage: Math.round((sent / total) * 100),
-          });
-        },
-      }
-    );
-
-    await db.insert(files).values({
-      name: file.name,
-      isFolder: false,
-      parentId: null,
-      mimeType: file.type,
-      size: file.size,
-      duration: video?.duration,
-      userId: user?.id,
-      chatId: "me",
-      fileId: fee.media?.fileId,
-      messageId: fee.id,
-    });
-  };
-  const audioUpload = async (file: File) => {
-    const audio = await getAudioCoverAsBlob(file);
-
-    let thumbv = undefined;
-
-    if (audio?.thumb) {
-      thumbv = await tg.uploadFile({
-        file: audio?.thumb as any,
-        fileMime: "image/jpeg",
-      });
-    }
-
-    const fee = await tg.sendMedia(
-      "me",
-      {
-        file: file,
-        type: "audio",
-        fileMime: file.type,
-        thumb: thumbv,
-        duration: audio?.duration,
-      },
-      {
-        progressCallback: (sent, total) => {
-          setUpload({
-            size: formatBytes(file.size),
-            uploaded: formatBytes(sent),
-            percentage: Math.round((sent / total) * 100),
-          });
-        },
-      }
-    );
-    setUpload(null);
-    console.log(fee);
-    console.log(fee.media?.id);
   };
 
   const getMessage = async (file: Files) => {
