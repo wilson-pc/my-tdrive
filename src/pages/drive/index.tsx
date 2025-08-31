@@ -753,13 +753,15 @@ export default function Index() {
                   wrap
                   style={{ alignItems: "center", margin: 0, padding: 0 }}
                 >
-                  <Button
-                    type="link"
-                    onClick={() => getMessage(item as Files)}
-                    icon={<DownloadOutlined />}
-                  >
-                    Descargar
-                  </Button>
+                  {item.isFolder && (
+                    <Button
+                      type="link"
+                      onClick={() => getMessage(item as Files)}
+                      icon={<DownloadOutlined />}
+                    >
+                      Descargar
+                    </Button>
+                  )}
                   <Button
                     type="link"
                     onClick={() => deleteFile(item as Files)}
