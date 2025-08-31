@@ -1,17 +1,16 @@
-
-import { Navigate } from 'react-router'
-import { useAuth } from './providers/AuthProvider'
+import { Navigate } from "react-router";
+import { useAuth } from "./providers/AuthProvider";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 
 export type PrivatePageProps = {
-  page: React.ReactNode
-}
+  page: React.ReactNode;
+};
 export const PrivatePage = ({ page }: PrivatePageProps) => {
-  const { user } = useAuth()
-  console.log(user)
+  const { user } = useAuth();
+
   if (user === null) {
-    return <Navigate to="/auth" />
+    return <Navigate to="/auth" />;
   }
-  return page
-}
+  return page;
+};

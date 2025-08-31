@@ -1,238 +1,290 @@
 import {
+  Alert,
   Button,
+  Card,
   DatePicker,
   Flex,
   Image,
   Input,
+  List,
   Modal,
   Progress,
   Select,
+  Skeleton,
   Space,
   Table,
   Typography,
   type DatePickerProps,
-  type TableProps
-} from 'antd'
-import { useEffect, useState } from 'react'
-import { db } from '../../db'
-import { tg } from '../../boot/telegram'
+  type TableProps,
+} from "antd";
+import { useEffect, useState } from "react";
+import { db } from "../../db";
+import { tg } from "../../boot/telegram";
 import {
+  convertPdfToImages,
   formatBytes,
   getAudioCoverAsBlob,
   getDuration,
+  getFileSize,
   getVideoMetadataFromFile,
-  isNumber
-} from '../../utils'
-import { files, type Files as Flv } from '../../schemas/files'
-import { useAuth } from '../../providers/AuthProvider'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { and, desc, eq, isNull } from 'drizzle-orm'
-import { getThumbnail, saveThumbnail } from '../../utils/indexDb'
-import { useDownload } from '../../useDownload'
-import { Long, Message } from '@mtcute/web'
-import Checkbox from 'antd/es/checkbox/Checkbox'
+  isNumber,
+  readFileData,
+} from "../../utils";
+import { files, type Files as Flv } from "../../schemas/files";
+import { useAuth } from "../../providers/AuthProvider";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { and, desc, eq, isNull } from "drizzle-orm";
+import { getThumbnail, saveThumbnail } from "../../utils/indexDb";
+import { useDownload } from "../../useDownload";
+import { Long, Message } from "@mtcute/web";
+import Checkbox from "antd/es/checkbox/Checkbox";
 import {
   AppstoreOutlined,
+  AudioOutlined,
+  DeleteOutlined,
+  DownloadOutlined,
+  FileTextOutlined,
   FolderOpenOutlined,
-  UnorderedListOutlined
-} from '@ant-design/icons'
-import { Link, useSearchParams } from 'react-router'
-import CardGridWithPagination from '../../components/carts'
-import { shares } from '../../schemas'
-import { createId } from '@paralleldrive/cuid2'
+  PictureOutlined,
+  ShareAltOutlined,
+  UnorderedListOutlined,
+  VideoCameraOutlined,
+} from "@ant-design/icons";
+import { Link, useSearchParams } from "react-router";
+import CardGridWithPagination from "../../components/carts";
+import { shares } from "../../schemas";
+import { createId } from "@paralleldrive/cuid2";
+import { useAtom } from "jotai/react";
+import { gridModeAtom } from "../../store";
 
-type Files = Flv & { thumb: string }
-const { Link: LinkOutlined } = Typography
+const { Text } = Typography;
+type Files = Flv & { thumb: string };
+const { Link: LinkOutlined } = Typography;
 
-navigator.serviceWorker.addEventListener('message', async (e) => {
-  if (e.data.type !== 'REQUEST_STREAM') return
+const icons: Record<string, React.ReactNode> = {
+  audio: <AudioOutlined />,
+  video: <VideoCameraOutlined />,
+  image: <PictureOutlined />,
+  document: <FileTextOutlined />,
+  folder: <FolderOpenOutlined />,
+};
 
-  const { file, params } = e.data
-  const stream = tg.downloadAsStream(file, params)
+navigator.serviceWorker.addEventListener("message", async (e) => {
+  if (e.data.type !== "REQUEST_STREAM") return;
+
+  const { file, params } = e.data;
+  const stream = tg.downloadAsStream(file, params);
 
   // Devolvemos el stream por el MessagePort
-  e.ports[0].postMessage({ stream }, [stream])
-})
+  e.ports[0].postMessage({ stream }, [stream]);
+});
 
 function uint8ArrayToBase64(
   data: Uint8Array,
-  mimeType = 'image/jpeg'
+  mimeType = "image/jpeg"
 ): Promise<string> {
-  const blob = new Blob([data], { type: mimeType })
+  const blob = new Blob([data], { type: mimeType });
 
   return new Promise((resolve, reject) => {
-    const reader = new FileReader()
+    const reader = new FileReader();
 
     reader.onloadend = () => {
-      resolve(reader.result as string) // Esto será algo como: "data:image/jpeg;base64,..."
-    }
+      resolve(reader.result as string); // Esto será algo como: "data:image/jpeg;base64,..."
+    };
 
     reader.onerror = (err) => {
-      reject(err)
-    }
+      reject(err);
+    };
 
-    reader.readAsDataURL(blob)
-  })
+    reader.readAsDataURL(blob);
+  });
 }
 export default function Index() {
-  const { user } = useAuth()
-  const [searchParams] = useSearchParams()
-  const { startDownload, startUpload } = useDownload()
-  const [isModalOpen, setIsModalOpen] = useState(false)
-  const [newFolderName, setNewFolderName] = useState('')
-  const [newGroup, setNewGroup] = useState(false)
+  const { user, dUser } = useAuth();
+  const [searchParams] = useSearchParams();
+  const { startDownload, startUpload } = useDownload();
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [newFolderName, setNewFolderName] = useState("");
+  const [newGroup, setNewGroup] = useState(false);
   const [selectedGroup, setSelectedGroup] = useState<number | string | null>(
     null
-  )
-  const [shareModalOpen, setShareModalOpen] = useState(false)
-  const [isGridView, setIsGridView] = useState(false)
-  const [selectGroup, setSelectGroup] = useState<boolean>(false)
-  const [groups, setGroups] = useState<any>([])
-  const [selectedFile, setSelectedFile] = useState<Files | null>(null)
-  const [shareLink, setShareLink] = useState('')
-  const [expirationDate, setExpirationDate] = useState<Date | null>(null)
+  );
+  const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [isGridView, setIsGridView] = useAtom(gridModeAtom);
+  const [selectGroup, setSelectGroup] = useState<boolean>(false);
+  const [groups, setGroups] = useState<any>([]);
+  const [selectedFile, setSelectedFile] = useState<Files | null>(null);
+  const [shareLink, setShareLink] = useState("");
+  const [expirationDate, setExpirationDate] = useState<Date | null>(null);
 
-  const folderId = searchParams.get('folderId')
+  const [requeridLoginServer, setRequeridLoginServer] = useState(false);
+
+  const folderId = searchParams.get("folderId");
   const folderQuery = useQuery({
-    queryKey: ['folder', folderId],
+    queryKey: ["folder", folderId],
     queryFn: async () => {
       if (user) {
         if (folderId) {
           const rs = await db.query.files.findFirst({
-            where: eq(files.id, folderId)
-          })
-          return rs ?? null
+            where: eq(files.id, folderId),
+          });
+          return rs ?? null;
         } else {
-          return null
+          return null;
         }
       } else {
-        return null
+        return null;
       }
     },
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
-    refetchInterval: false
-  })
+    refetchInterval: false,
+  });
 
-  const query = useQuery({
-    queryKey: ['files', user?.id ?? 0, folderId],
+  const query = useQuery<Files[]>({
+    queryKey: ["files", user?.id ?? 0, folderId],
     queryFn: async () => {
-      console.log(folderId)
+      console.log(folderId);
       const normalizedFolderId =
-        folderId === undefined || folderId === '' ? null : folderId
-      console.log(normalizedFolderId)
+        folderId === undefined || folderId === "" ? null : folderId;
+      console.log(normalizedFolderId);
       if (user) {
         const rs = await db.query.files.findMany({
           where: and(
             eq(files.userId, user?.id ?? 0),
             normalizedFolderId === null
               ? isNull(files.parentId)
-              : eq(files.parentId, folderId ?? '')
+              : eq(files.parentId, folderId ?? "")
           ),
-          orderBy: [desc(files.name)]
-        })
-        return rs.sort((a, b) => {
-          // Si a es folder y b no, a va antes
-          if (a.isFolder && !b.isFolder) return -1
-          // Si b es folder y a no, b va antes
-          if (!a.isFolder && b.isFolder) return 1
-          // Si ambos son iguales respecto a isFolder, no cambia orden
-          return 0
-        })
+          orderBy: [desc(files.name)],
+        });
+        return rs
+          .sort((a, b) => {
+            // Si a es folder y b no, a va antes
+            if (a.isFolder && !b.isFolder) return -1;
+            // Si b es folder y a no, b va antes
+            if (!a.isFolder && b.isFolder) return 1;
+            // Si ambos son iguales respecto a isFolder, no cambia orden
+            return 0;
+          })
+          .map((item) => {
+            if (item.isFolder) {
+              return { ...item, thumb: "" };
+            } else {
+              return { ...item, thumb: "" };
+            }
+          });
       } else {
-        return []
+        return [];
       }
     },
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
-    refetchInterval: false
-  })
+    refetchInterval: false,
+  });
   const [upload, setUpload] = useState<{
-    size: string
-    uploaded: string
-    percentage: number
-  } | null>(null)
-  const queryClient = useQueryClient()
-  const columns: TableProps<Files>['columns'] = [
+    size: string;
+    uploaded: string;
+    percentage: number;
+  } | null>(null);
+  const queryClient = useQueryClient();
+  const columns: TableProps<Files>["columns"] = [
     {
-      title: '',
-      dataIndex: 'messageId',
-      key: 'messageId',
+      title: "",
+      dataIndex: "messageId",
+      key: "messageId",
       render: (messageId, record) => {
         if (record.isFolder) {
-          return <FolderOpenOutlined style={{ fontSize: 40 }} />
+          return <FolderOpenOutlined style={{ fontSize: 40 }} />;
         }
         if (record.thumb) {
-          return <Image src={record.thumb} height={40} preview={false} />
+          return <Image src={record.thumb} height={40} preview={false} />;
         } else {
-          return ''
+          return "";
         }
-      }
+      },
     },
     {
-      title: 'Name',
-      dataIndex: 'name',
-      key: 'name',
-      render: (text) => <a>{text}</a>
+      title: "Name",
+      dataIndex: "name",
+      key: "name",
+      render: (text) => <a>{text}</a>,
     },
     {
-      title: 'Tipo',
-      dataIndex: 'mimeType',
-      key: 'mimeType'
+      title: "Tipo",
+      dataIndex: "mimeType",
+      key: "mimeType",
     },
     {
-      title: 'Tamaño',
-      dataIndex: 'size',
-      key: 'size',
+      title: "Tamaño",
+      dataIndex: "size",
+      key: "size",
       render: (text, record) => {
         if (
-          record.mimeType?.includes('audio') ||
-          record.mimeType?.includes('video')
+          record.mimeType?.includes("audio") ||
+          record.mimeType?.includes("video")
         ) {
-          return formatBytes(text)
+          return formatBytes(text);
         }
-        return ''
-      }
+        return "";
+      },
     },
     {
-      title: 'Duration',
-      dataIndex: 'duration',
-      key: 'duration',
+      title: "Duration",
+      dataIndex: "duration",
+      key: "duration",
       render: (text, record) => {
         if (
-          record.mimeType?.includes('audio') ||
-          record.mimeType?.includes('video')
+          record.mimeType?.includes("audio") ||
+          record.mimeType?.includes("video")
         ) {
-          return getDuration(text)
+          return getDuration(text);
         }
-        return ''
-      }
+        return "";
+      },
     },
     {
-      title: 'Action',
-      key: 'action',
+      title: "Action",
+      key: "action",
       render: (_, record) => (
-        <Space size='middle'>
+        <Space size="middle">
           {record.isFolder ? (
             <>
               <Link to={`?folderId=${record.id}`}>
-                {' '}
-                <Button type='primary'>ver</Button>
+                {" "}
+                <Button type="primary">ver</Button>
               </Link>
+              <Button
+                type="link"
+                onClick={() => {
+                  if (dUser?.serverSession) {
+                    setSelectedFile(record);
+                    setShareModalOpen(true);
+                  } else {
+                    setRequeridLoginServer(true);
+                  }
+                }}
+              >
+                Compartir
+              </Button>
             </>
           ) : (
             <>
-              <Button type='primary' onClick={() => getMessage(record)}>
+              <Button type="primary" onClick={() => getMessage(record)}>
                 Descargar
               </Button>
-              <Button type='link' onClick={() => deleteFile(record)}>
+              <Button type="link" onClick={() => deleteFile(record)}>
                 Borrar
               </Button>
               <Button
-                type='link'
+                type="link"
                 onClick={() => {
-                  setSelectedFile(record)
-                  setShareModalOpen(true)
+                  if (dUser?.serverSession) {
+                    setSelectedFile(record);
+                    setShareModalOpen(true);
+                  } else {
+                    setRequeridLoginServer(true);
+                  }
                 }}
               >
                 Compartir
@@ -240,9 +292,9 @@ export default function Index() {
             </>
           )}
         </Space>
-      )
-    }
-  ]
+      ),
+    },
+  ];
   /*
   useEffect(() => {
     async function init() {
@@ -267,74 +319,131 @@ export default function Index() {
   useEffect(() => {
     if (query.data) {
       async function getThumb(fles: Flv[]) {
-        const fils: Record<string, any> = {}
+        const fils: Record<string, any> = {};
 
-        const chatId = folderQuery.data?.chatId ?? 'me'
-        const peerId = isNumber(chatId) ? Number(chatId) : chatId
+        const chatId = folderQuery.data?.chatId ?? "me";
+        const peerId = isNumber(chatId) ? Number(chatId) : chatId;
 
         const message = await tg.getMessages(
           peerId,
           fles
-            .filter((f) => f.isFolder === false)
+            .filter((f) => f.messageId !== null)
             .map((f) => Number(f.messageId))
-        )
-        const messagesRecord: Record<number, Message | null> = {}
+        );
+        const messagesRecord: Record<number, Message | null> = {};
         for (const m of message) {
           if (m) {
-            messagesRecord[m.id] = m
+            messagesRecord[m.id] = m;
           }
         }
         for (const file of fles) {
           if (file.isFolder === false) {
-            const cached = await getThumbnail(`${file.messageId}`)
-            const message: any = messagesRecord[Number(file.messageId)]
+            const cached = await getThumbnail(`${file.messageId}`);
+            const message: any = messagesRecord[Number(file.messageId)];
 
             if (!cached) {
               //console.log(message[0].media.thumbnails[1].location)
               const buff: any = await tg.call({
-                _: 'upload.getFile',
+                _: "upload.getFile",
                 location: message.media.thumbnails[1].location,
                 offset: 0,
-                limit: 32768
-              })
-              console.log(buff)
-              //  const thumb= await tg.downloadAsBuffer("AAMCAQADGQEAAQr8D2hYRuCbTGUauAOmWC51wbmWTGRhAAIiCAAC-zHBRrtM63rZ8OINAQAHbQADNgQ")
-              const base64 = await uint8ArrayToBase64(buff.bytes)
+                limit: 32768,
+              });
 
-              await saveThumbnail(`${file.messageId}`, buff.bytes)
-              fils[file.messageId ?? ''] = base64
+              //  const thumb= await tg.downloadAsBuffer("AAMCAQADGQEAAQr8D2hYRuCbTGUauAOmWC51wbmWTGRhAAIiCAAC-zHBRrtM63rZ8OINAQAHbQADNgQ")
+              const base64 = await uint8ArrayToBase64(buff.bytes);
+
+              await saveThumbnail(`${file.messageId}`, buff.bytes);
+              fils[file.messageId ?? ""] = base64;
             } else {
-              const base64 = await uint8ArrayToBase64(cached)
-              fils[file.messageId ?? ''] = base64
+              const base64 = await uint8ArrayToBase64(cached);
+              fils[file.messageId ?? ""] = base64;
+            }
+          } else {
+            if (file.messageId) {
+              const cached = await getThumbnail(`${file.messageId}`);
+              const message: any = messagesRecord[Number(file.messageId)];
+
+              if (!cached) {
+                //console.log(message[0].media.thumbnails[1].location)
+                const buff: any = await tg.call({
+                  _: "upload.getFile",
+                  location: message.media.location,
+                  offset: 0,
+                  limit: 32768,
+                });
+
+                //  const thumb= await tg.downloadAsBuffer("AAMCAQADGQEAAQr8D2hYRuCbTGUauAOmWC51wbmWTGRhAAIiCAAC-zHBRrtM63rZ8OINAQAHbQADNgQ")
+                const base64 = await uint8ArrayToBase64(buff.bytes);
+
+                await saveThumbnail(`${file.messageId}`, buff.bytes);
+                fils[file.messageId ?? ""] = base64;
+              } else {
+                const base64 = await uint8ArrayToBase64(cached);
+                fils[file.messageId ?? ""] = base64;
+              }
             }
           }
         }
 
         queryClient.setQueryData(
-          ['files', user?.id ?? 0, folderId],
+          ["files", user?.id ?? 0, folderId],
           (oldData: Files[]) => {
-            if (!oldData) return []
+            if (!oldData) return [];
 
             return oldData.map((item) => {
-              if (item.isFolder === false) {
-                return { ...item, thumb: fils[item.messageId ?? ''] }
+              if (item.messageId) {
+                return { ...item, thumb: fils[item.messageId ?? ""] };
               }
-              return item
-            })
+              return item;
+            });
           }
-        )
+        );
       }
-      void getThumb(query.data)
+      void getThumb(query.data);
     }
-  }, [query.data])
+  }, [query.data]);
 
-  const playVideo = () => {}
+  const onChangeCover = async (e: any) => {
+    const file: File = e.target.files[0];
+    if (file && selectedFile) {
+      const chatId = folderQuery.data?.chatId ?? "me";
+      const peerId = isNumber(chatId) ? Number(chatId) : chatId;
+      const image = await readFileData(file);
+      queryClient.setQueryData(
+        ["files", user?.id ?? 0, folderId],
+        (oldData: Files[]) => {
+          if (!oldData) return [];
+
+          return oldData.map((item) => {
+            if (item.id === selectedFile.id) {
+              return { ...item, thumb: image };
+            }
+            return item;
+          });
+        }
+      );
+      const fee = await tg.sendMedia(peerId ?? 0, {
+        file: file,
+        type: "photo",
+        fileMime: file.type,
+        caption: `Caratula de ${selectedFile?.name}`,
+      });
+
+      await db
+        .update(files)
+        .set({
+          messageId: `${fee.id}`,
+        })
+        .where(eq(files.id, selectedFile.id));
+    }
+  };
 
   const onChange = async (e: any) => {
-    const file: File = e.target.files[0]
+    const file: File = e.target.files[0];
     if (file) {
-      const chatId = folderQuery.data?.chatId ?? 'me'
-      const peerId = isNumber(chatId) ? Number(chatId) : chatId
+      const chatId = folderQuery.data?.chatId ?? "me";
+      const peerId = isNumber(chatId) ? Number(chatId) : chatId;
       //  const de= await tg.getPeer(peerId)
       //console.log(de)
       /*
@@ -344,7 +453,7 @@ export default function Index() {
   console.log(peer)
 */
       //return
-      startUpload(file, user?.id ?? 0, peerId, folderId ?? '')
+      startUpload(file, user?.id ?? 0, peerId, folderId ?? "");
       /*
         const options = {
           maxSizeMB: 1,
@@ -391,43 +500,43 @@ export default function Index() {
         console.log(fee.media?.id)
       */
     }
-  }
+  };
 
   const videoUpload = async (file: File) => {
-    const video = await getVideoMetadataFromFile(file)
-    console.log(video)
+    const video = await getVideoMetadataFromFile(file);
+    console.log(video);
     //  throw new Error("error")
     //      const tsize = await getImageDimensionsFromFile(file)
     //    const izise = await getImageDimensionsFromFile(file)
 
-    let thumbv = undefined
+    let thumbv = undefined;
 
     if (video?.thumbnail) {
       thumbv = await tg.uploadFile({
         file: video.thumbnail as any,
-        fileMime: 'image/jpeg'
-      })
+        fileMime: "image/jpeg",
+      });
     }
 
     const fee = await tg.sendMedia(
-      'me',
+      "me",
       {
         file: file,
-        type: 'video',
+        type: "video",
         fileMime: file.type,
         thumb: thumbv,
-        duration: video?.duration
+        duration: video?.duration,
       },
       {
         progressCallback: (sent, total) => {
           setUpload({
             size: formatBytes(file.size),
             uploaded: formatBytes(sent),
-            percentage: Math.round((sent / total) * 100)
-          })
-        }
+            percentage: Math.round((sent / total) * 100),
+          });
+        },
       }
-    )
+    );
 
     await db.insert(files).values({
       name: file.name,
@@ -437,102 +546,105 @@ export default function Index() {
       size: file.size,
       duration: video?.duration,
       userId: user?.id,
-      chatId: 'me',
+      chatId: "me",
       fileId: fee.media?.fileId,
-      messageId: fee.id
-    })
-  }
+      messageId: fee.id,
+    });
+  };
   const audioUpload = async (file: File) => {
-    const audio = await getAudioCoverAsBlob(file)
+    const audio = await getAudioCoverAsBlob(file);
 
-    let thumbv = undefined
+    let thumbv = undefined;
 
     if (audio?.thumb) {
       thumbv = await tg.uploadFile({
         file: audio?.thumb as any,
-        fileMime: 'image/jpeg'
-      })
+        fileMime: "image/jpeg",
+      });
     }
 
     const fee = await tg.sendMedia(
-      'me',
+      "me",
       {
         file: file,
-        type: 'audio',
+        type: "audio",
         fileMime: file.type,
         thumb: thumbv,
-        duration: audio?.duration
+        duration: audio?.duration,
       },
       {
         progressCallback: (sent, total) => {
           setUpload({
             size: formatBytes(file.size),
             uploaded: formatBytes(sent),
-            percentage: Math.round((sent / total) * 100)
-          })
-        }
+            percentage: Math.round((sent / total) * 100),
+          });
+        },
       }
-    )
-    setUpload(null)
-    console.log(fee)
-    console.log(fee.media?.id)
-  }
+    );
+    setUpload(null);
+    console.log(fee);
+    console.log(fee.media?.id);
+  };
 
   const getMessage = async (file: Files) => {
-    const chatId = folderQuery.data?.chatId ?? 'me'
-    const peerId = isNumber(chatId) ? Number(chatId) : chatId
-    const message: any = await tg.getMessages(peerId, [Number(file.messageId)])
-    const media = message[0].media
+    const chatId = folderQuery.data?.chatId ?? "me";
+    const peerId = isNumber(chatId) ? Number(chatId) : chatId;
+    const message: any = await tg.getMessages(peerId, [Number(file.messageId)]);
+    const media = message[0].media;
 
-    startDownload(media, file.name)
-  }
+    startDownload(media, file.name);
+  };
 
   const deleteFile = async (file: Files) => {
-    await db.delete(files).where(eq(files.id, file.id))
-    await tg.deleteMessagesById(file.chatId as string, [Number(file.messageId)])
-    query.refetch()
-  }
+    await db.delete(files).where(eq(files.id, file.id));
+
+    const chatId = folderQuery.data?.chatId ?? "me";
+    const peerId = isNumber(chatId) ? Number(chatId) : chatId;
+    await tg.deleteMessagesById(peerId as string, [Number(file.messageId)]);
+    query.refetch();
+  };
 
   const getGroups = async () => {
     const rs: any = await tg.call({
-      _: 'messages.getDialogs',
+      _: "messages.getDialogs",
       offsetDate: 0,
       offsetId: 0,
-      offsetPeer: { _: 'inputPeerEmpty' },
+      offsetPeer: { _: "inputPeerEmpty" },
       limit: 100,
-      hash: Long.ZERO
-    })
+      hash: Long.ZERO,
+    });
 
-    const groups: any[] = []
+    const groups: any[] = [];
     for (const element of rs.chats) {
-      console.log(element._)
-      if (element._ !== 'channel') {
+      console.log(element._);
+      if (element._ !== "channel") {
         // console.log(element.id,element.title,element.username,element.usernames)
         groups.push({
           value: element.id,
-          label: element.title
-        })
+          label: element.title,
+        });
       }
     }
-    setGroups(groups)
-  }
+    setGroups(groups);
+  };
 
   const createFolder = async () => {
     if (!newFolderName.trim()) {
-      return false
+      return false;
     }
-    let chatId: string | number = 'me'
+    let chatId = folderQuery.data?.chatId ?? "me";
 
     if (newGroup) {
       const newTgroup = await tg.createGroup({
         title: newFolderName,
-        users: [Number(user?.id)]
-      })
-      chatId = -newTgroup.chat.id
+        users: [Number(user?.id)],
+      });
+      chatId = String(newTgroup.chat.id);
     }
 
     if (selectedGroup) {
-      chatId = selectedGroup
+      chatId = String(selectedGroup);
     }
 
     await db.insert(files).values({
@@ -542,96 +654,122 @@ export default function Index() {
       size: 0,
       duration: 0,
       userId: user?.id,
-      chatId: `${chatId}`,
+      chatId: String(chatId),
       fileId: null,
-      messageId: null
-    })
-    query.refetch()
-    setIsModalOpen(false)
-    setNewFolderName('')
-    setNewGroup(false)
-    setSelectedGroup(null)
-  }
+      messageId: null,
+      parentId: folderId ?? null,
+    });
+    query.refetch();
+    setIsModalOpen(false);
+    setNewFolderName("");
+    setNewGroup(false);
+    setSelectedGroup(null);
+  };
   const openCreateFolder = () => {
-    setIsModalOpen(true)
-  }
+    setIsModalOpen(true);
+  };
 
-  const onChangeDate: DatePickerProps['onChange'] = (date, dateString) => {
-    console.log(date, dateString)
-    setExpirationDate(date.toDate())
-  }
+  const onChangeDate: DatePickerProps["onChange"] = (date, dateString) => {
+    console.log(date, dateString);
+    setExpirationDate(date.toDate());
+  };
   const generateLink = async () => {
-    const id = createId()
+    const id = createId();
     await db.insert(shares).values({
       id: id,
       ownerId: user?.id ?? 0,
       fileId: selectedFile?.id,
-      expirationDate: expirationDate??null
-    })
-    const currentDomain = window.location.origin
-    const link = `${currentDomain}/share/${id}`
-    setShareLink(link)
-  }
+      expirationDate: expirationDate ?? null,
+    });
+    const currentDomain = window.location.origin;
+    const link = `${currentDomain}/share/${id}`;
+    setShareLink(link);
+  };
   return (
-    <div className='p-2'>
+    <div className="p-2">
       <input
-        style={{ display: 'none' }}
-        type='file'
-        id='file-upload'
+        style={{ display: "none" }}
+        type="file"
+        id="file-upload"
         onChange={onChange}
+      ></input>
+
+      <input
+        style={{ display: "none" }}
+        type="file"
+        id="file-upload-cover"
+        onChange={onChangeCover}
       ></input>
       <div
         style={{
-          display: 'flex',
-          justifyContent: 'space-between',
-          width: '100%'
+          display: "flex",
+          justifyContent: "space-between",
+          width: "100%",
         }}
       >
+        {shareModalOpen && (
+          <Modal
+            title="Compartir archivo"
+            centered
+            open={shareModalOpen}
+            onCancel={() => setShareModalOpen(false)}
+            footer={[
+              <Button key="back" onClick={() => setShareModalOpen(false)}>
+                Cerrar
+              </Button>,
+            ]}
+          >
+            <div>
+              <DatePicker onChange={onChangeDate} />
+              <br />
+              <br />
+              <div>
+                <Flex gap="small" wrap>
+                  {shareLink && (
+                    <LinkOutlined href={shareLink} target="_blank">
+                      {shareLink}
+                    </LinkOutlined>
+                  )}
+                  <Button type="primary" onClick={generateLink}>
+                    Generar enlace
+                  </Button>
+                </Flex>
+              </div>
+            </div>
+          </Modal>
+        )}
+
         <Modal
-          title='Compartir archivo'
-          centered
-          open={shareModalOpen}
-          onCancel={() => setShareModalOpen(false)}
-          footer={[
-            <Button key='back' onClick={() => setShareModalOpen(false)}>
-              Cerrar
-            </Button>
-          ]}
+          title="Requisito para compartir"
+          closable={{ "aria-label": "Custom Close Button" }}
+          open={requeridLoginServer}
+          onOk={() => setRequeridLoginServer(false)}
+          onCancel={() => setRequeridLoginServer(false)}
         >
           <div>
-            <DatePicker onChange={onChangeDate} />
+            <Alert message="Para compartir archivos y carpeta es necesario que inice session el servidor" />
             <br />
-            <br />
-            <div>
-              <Flex gap='small' wrap>
-                {shareLink && (
-                  <LinkOutlined href={shareLink} target='_blank'>
-                    {shareLink}
-                  </LinkOutlined>
-                )}
-                <Button type='primary' onClick={generateLink}>
-                  Generar enlace
-                </Button>
-              </Flex>
-            </div>
+            <Button type="primary">
+              <Link to={`/server-login`}>Iniciar sesión</Link>
+            </Button>
           </div>
         </Modal>
         <Modal
-          title='Crear carpeta'
-          closable={{ 'aria-label': 'Custom Close Button' }}
+          title="Crear carpeta"
+          closable={{ "aria-label": "Custom Close Button" }}
           open={isModalOpen}
           onOk={createFolder}
           onCancel={() => setIsModalOpen(false)}
         >
           <div>
             <Input
-              placeholder='Nombre de la carpeta'
+              placeholder="Nombre de la carpeta"
               onChange={(e) => setNewFolderName(e.target.value)}
             />
             <Checkbox
               value={newGroup}
               onChange={() => {
-                setNewGroup(!newGroup)
+                setNewGroup(!newGroup);
               }}
             >
               Crear en telegram como un grupo
@@ -641,9 +779,9 @@ export default function Index() {
               value={selectGroup}
               onChange={async () => {
                 if (groups.length === 0) {
-                  void getGroups()
+                  void getGroups();
                 }
-                setSelectGroup(!selectGroup)
+                setSelectGroup(!selectGroup);
               }}
             >
               Vincular a un grupo existente
@@ -653,18 +791,18 @@ export default function Index() {
             {selectGroup && (
               <>
                 <Select
-                  style={{ width: '100%' }}
+                  style={{ width: "100%" }}
                   showSearch
-                  placeholder='Buscar'
-                  optionFilterProp='label'
+                  placeholder="Buscar"
+                  optionFilterProp="label"
                   filterSort={(optionA: any, optionB: any) =>
-                    (optionA?.label ?? '')
+                    (optionA?.label ?? "")
                       .toLowerCase()
-                      .localeCompare((optionB?.label ?? '').toLowerCase())
+                      .localeCompare((optionB?.label ?? "").toLowerCase())
                   }
                   onChange={(val) => {
-                    console.log(val)
-                    setSelectedGroup(val)
+                    console.log(val);
+                    setSelectedGroup(val);
                   }}
                   options={groups}
                 />
@@ -672,28 +810,28 @@ export default function Index() {
             )}
           </div>
         </Modal>
-        <div style={{ float: 'right' }}>
+        <div style={{ float: "right" }}>
           <Button
-            type='primary'
+            type="primary"
             onClick={() => {
-              const input = document.getElementById('file-upload')
-              input?.click()
+              const input = document.getElementById("file-upload");
+              input?.click();
             }}
             style={{ marginBottom: 16 }}
           >
             subir archivo
           </Button>
         </div>
-        <div style={{ float: 'left' }}>
+        <div style={{ float: "left" }}>
           <Space
-            direction='horizontal'
-            size='middle'
-            style={{ display: 'flex' }}
+            direction="horizontal"
+            size="middle"
+            style={{ display: "flex" }}
           >
             <Button
-              type='primary'
+              type="primary"
               onClick={() => {
-                openCreateFolder()
+                openCreateFolder();
               }}
             >
               Crear Carpeta
@@ -721,18 +859,147 @@ export default function Index() {
           pageSize={8}
           onDownload={getMessage}
           onDelete={deleteFile}
+          onShare={(file: Files) => {
+            if (dUser?.serverSession) {
+              setSelectedFile(file);
+              setShareModalOpen(true);
+            } else {
+              setRequeridLoginServer(true);
+            }
+          }}
+          onChangeIcon={(file: Files) => {
+            setSelectedFile(file);
+            const input = document.getElementById("file-upload-cover");
+            input?.click();
+          }}
         />
       ) : (
-        <Table<Files> columns={columns} dataSource={query.data ?? []} />
+        <div
+          style={{
+            backgroundColor: "#f5f5f5",
+          }}
+        >
+          <List
+            className="demo-loadmore-list"
+            itemLayout="horizontal"
+            dataSource={query.data ?? []}
+            renderItem={(item) => (
+              <List.Item>
+                <List.Item.Meta
+                  avatar={
+                    item.isFolder ? (
+                      <>
+                        {item.thumb ? (
+                          <img
+                            alt={item.name}
+                            src={item.thumb}
+                            style={{
+                              height: 80,
+                              width: "100%",
+                              objectFit: "cover",
+                            }}
+                          />
+                        ) : (
+                          <FolderOpenOutlined
+                            style={{ fontSize: 80, color: "#999" }}
+                          />
+                        )}
+                      </>
+                    ) : item.thumb ? (
+                      <Image src={item.thumb} height={80} preview={false} />
+                    ) : (
+                      icons[item.mimeType?.split("/")[0] ?? "folder"]
+                    )
+                  }
+                  title={
+                    item.isFolder ? (
+                      <>
+                        <Link to={`?folderId=${item.id}`}>
+                          {item.name}
+                        </Link>{" "}
+                      </>
+                    ) : (
+                      <Link to={`/file/${item.id}`}> {item.name} </Link>
+                    )
+                  }
+                  description={
+                    item.isFolder ? (
+                      <>
+                        {" "}
+                        <Text type="secondary">
+                          <strong>creacion:</strong>{" "}
+                          {item.createdAt.toLocaleString()}
+                        </Text>
+                      </>
+                    ) : (
+                      <>
+                        <span>
+                          {" "}
+                          {getFileSize(item?.size ?? 0)} - {item.mimeType}{" "}
+                        </span>
+                        <br />
+                        <span> {item.createdAt.toLocaleString()}</span>
+                        <br />
+                        {item.duration && (
+                          <>
+                            <Text type="secondary">
+                              <strong>Duración:</strong>{" "}
+                              {getDuration(item?.duration ?? 0)}
+                            </Text>
+                          </>
+                        )}
+                      </>
+                    )
+                  }
+                />
+                <Flex
+                  gap="small"
+                  wrap
+                  style={{ alignItems: "center", margin: 0, padding: 0 }}
+                >
+                  <Button
+                    type="link"
+                    onClick={() => getMessage(item as Files)}
+                    icon={<DownloadOutlined />}
+                  >
+                    Descargar
+                  </Button>
+                  <Button
+                    type="link"
+                    onClick={() => deleteFile(item as Files)}
+                    icon={<DeleteOutlined />}
+                  >
+                    Borrar
+                  </Button>
+                  <Button
+                    type="link"
+                    onClick={() => {
+                      setShareLink("");
+                      if (dUser?.serverSession) {
+                        setSelectedFile(item);
+                        setShareModalOpen(true);
+                      } else {
+                        setRequeridLoginServer(true);
+                      }
+                    }}
+                    icon={<ShareAltOutlined />}
+                  >
+                    Compartir
+                  </Button>
+                </Flex>
+              </List.Item>
+            )}
+          />
+        </div>
       )}
       <Modal closable={false} open={upload !== null} footer={null} centered>
-        <div style={{ textAlign: 'center' }}>
+        <div style={{ textAlign: "center" }}>
           <div>
             <h3>Subiendo archivo</h3>
           </div>
           <div>
             <Progress
-              type='circle'
+              type="circle"
               percent={upload?.percentage}
               format={(percent) => `${percent} / 100`}
             />
@@ -745,5 +1012,5 @@ export default function Index() {
         </div>
       </Modal>
     </div>
-  )
+  );
 }
