@@ -20,7 +20,7 @@ import { getDuration, getFileSize, isNumber, readFileData } from "../../utils";
 import { files, type Files as Flv } from "../../schemas/files";
 import { useAuth } from "../../providers/AuthProvider";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 import { getThumbnail, saveThumbnail } from "../../utils/indexDb";
 import { useDownload } from "../../useDownload";
 import { Long, Message } from "@mtcute/web";
@@ -143,8 +143,9 @@ export default function Index() {
               ? isNull(files.parentId)
               : eq(files.parentId, folderId ?? "")
           ),
-          orderBy: [desc(files.name)],
+          orderBy: [asc(files.name)],
         });
+        console.log(rs);
         return rs
           .sort((a, b) => {
             // Si a es folder y b no, a va antes
@@ -753,7 +754,7 @@ export default function Index() {
                   wrap
                   style={{ alignItems: "center", margin: 0, padding: 0 }}
                 >
-                  {item.isFolder && (
+                  {item.isFolder === false && (
                     <Button
                       type="link"
                       onClick={() => getMessage(item as Files)}

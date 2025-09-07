@@ -149,7 +149,7 @@ const CardGridWithPagination: React.FC<Props> = ({
                 overflow: "hidden",
                 boxShadow: "0 2px 8px rgba(0,0,0,0.05)",
                 maxWidth: 260,
-                height: 380,
+                height: 400,
                 margin: "0 auto",
                 paddingBottom: 19,
               }}
